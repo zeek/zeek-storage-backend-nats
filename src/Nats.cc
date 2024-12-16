@@ -2,15 +2,19 @@
 
 #include <nats/nats.h>
 #include <zeek/Func.h>
+#include <zeek/ZeekString.h>
 
 namespace zeek::storage::backends::nats {
 
 ErrorResult Nats::DoOpen(RecordValPtr config) {
+    auto url = config->GetField<StringVal>("url")->Get();
     natsConnection* conn = nullptr;
     natsStatus stat;
 
-    // TODO: Not default URL, let that configure via config
-    stat = natsConnection_ConnectTo(&conn, NATS_DEFAULT_URL);
+    // TODO: If I'm being thorough, this would be a `natsConnection_Connect` call
+    // and the record would have all of the `__natsOptions` options. But there are
+    // like 50 options.
+    stat = natsConnection_ConnectTo(&conn, url->CheckString());
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
@@ -33,7 +37,6 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
-    connected = true;
     return std::nullopt;
 }
 
@@ -41,6 +44,8 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 void Nats::Done() {
     natsConnection_Destroy(conn);
     kvStore_Destroy(keyVal);
+    conn = nullptr;
+    keyVal = nullptr;
 }
 
 ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expiration_time, ErrorResultCallback* cb) {
