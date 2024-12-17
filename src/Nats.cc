@@ -27,7 +27,7 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     kvConfig kvc;
     kvConfig_Init(&kvc);
 
-    kvc.Bucket = "KVS2";
+    kvc.Bucket = config->GetField<StringVal>("bucket")->Get()->CheckString();
     kvc.History = 10;
 
     stat = js_CreateKeyValue(&keyVal, jetstream, &kvc);
