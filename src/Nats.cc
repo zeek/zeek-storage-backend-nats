@@ -22,9 +22,7 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     jsOpts.PublishAsync.MaxPending = 256;
 
     // Create JetStream Context
-    // TODO: Figure out what if this I need to free memory from etc.
-    jsCtx* js = nullptr;
-    natsConnection_JetStream(&js, conn, &jsOpts);
+    natsConnection_JetStream(&jetstream, conn, &jsOpts);
 
     kvConfig kvc;
     kvConfig_Init(&kvc);
@@ -32,18 +30,19 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     kvc.Bucket = "KVS2";
     kvc.History = 10;
 
-    stat = js_CreateKeyValue(&keyVal, js, &kvc);
+    stat = js_CreateKeyValue(&keyVal, jetstream, &kvc);
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
     return std::nullopt;
 }
 
-// TODO: Destroy jetstream too?
 void Nats::Done() {
     natsConnection_Destroy(conn);
     kvStore_Destroy(keyVal);
+    jsCtx_Destroy(jetstream);
     conn = nullptr;
+    jetstream = nullptr;
     keyVal = nullptr;
 }
 
