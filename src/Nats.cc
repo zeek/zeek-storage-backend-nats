@@ -8,7 +8,6 @@ namespace zeek::storage::backends::nats {
 
 ErrorResult Nats::DoOpen(RecordValPtr config) {
     auto url = config->GetField<StringVal>("url")->Get();
-    natsConnection* conn = nullptr;
     natsStatus stat;
 
     // TODO: If I'm being thorough, this would be a `natsConnection_Connect` call
@@ -48,12 +47,36 @@ void Nats::Done() {
     keyVal = nullptr;
 }
 
+void makeStringValidKey(std::string& key) {
+    size_t pos = 0;
+    while ( pos < key.length() ) {
+        // TODO: These replacements should not be final, maybe it should just be
+        // the hex code or something? Slashes are allowed so like \x55 ish.
+        switch ( key.at(pos) ) {
+            case '{': key.replace(pos, 1, "LBRACE"); break;
+            case '}': key.replace(pos, 1, "RBRACE"); break;
+            case ':': key.replace(pos, 1, "COLON"); break;
+            case '"': key.replace(pos, 1, "DOUBLEQUOTE"); break;
+            case '.': key.replace(pos, 1, "DOT"); break;
+            case '*': key.replace(pos, 1, "STAR"); break;
+            case '>': key.replace(pos, 1, "GT"); break;
+            case '$': key.replace(pos, 1, "DOLLAR"); break;
+            case '^': key.replace(pos, 1, "CARROT"); break;
+            case ',': key.replace(pos, 1, "COMMA"); break;
+            case '[': key.replace(pos, 1, "LBRACKET"); break;
+            case ']': key.replace(pos, 1, "RBRACKET"); break;
+            case '(': key.replace(pos, 1, "LPAREN"); break;
+            case ')': key.replace(pos, 1, "RPAREN"); break;
+            case '?': key.replace(pos, 1, "QUESTION"); break;
+            case ' ': key.replace(pos, 1, "SPACE"); break;
+        }
+        pos++;
+    }
+}
+
 ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expiration_time, ErrorResultCallback* cb) {
-    // TODO: The key needs special escaping, namely to avoid `null` (I think that means ASCII 0?),
-    // space, '.', '*', and '>'
-    // Also can't start with a star or underscore, by convention
-    // But... it seems to apply to curly braces and stuff too. :(
     auto json_key = key->ToJSON()->ToStdString();
+    makeStringValidKey(json_key);
     auto json_value = value->ToJSON()->ToStdString();
     uint64_t rev = 0;
 
@@ -67,6 +90,7 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
 ValResult Nats::DoGet(ValPtr key, ValResultCallback* cb) {
     kvEntry* entry = NULL;
     auto json_key = key->ToJSON()->ToStdString();
+    makeStringValidKey(json_key);
     auto stat = kvStore_Get(&entry, keyVal, json_key.c_str());
     if ( stat != NATS_OK )
         return nonstd::unexpected<std::string>(natsStatus_GetText(stat));
