@@ -47,40 +47,31 @@ void Nats::Done() {
     keyVal = nullptr;
 }
 
-void makeStringValidKey(std::string& key) {
-    size_t pos = 0;
-    while ( pos < key.length() ) {
-        // TODO: These replacements should not be final, maybe it should just be
-        // the hex code or something? Slashes are allowed so like \x55 ish.
-        switch ( key.at(pos) ) {
-            case '{': key.replace(pos, 1, "LBRACE"); break;
-            case '}': key.replace(pos, 1, "RBRACE"); break;
-            case ':': key.replace(pos, 1, "COLON"); break;
-            case '"': key.replace(pos, 1, "DOUBLEQUOTE"); break;
-            case '.': key.replace(pos, 1, "DOT"); break;
-            case '*': key.replace(pos, 1, "STAR"); break;
-            case '>': key.replace(pos, 1, "GT"); break;
-            case '$': key.replace(pos, 1, "DOLLAR"); break;
-            case '^': key.replace(pos, 1, "CARROT"); break;
-            case ',': key.replace(pos, 1, "COMMA"); break;
-            case '[': key.replace(pos, 1, "LBRACKET"); break;
-            case ']': key.replace(pos, 1, "RBRACKET"); break;
-            case '(': key.replace(pos, 1, "LPAREN"); break;
-            case ')': key.replace(pos, 1, "RPAREN"); break;
-            case '?': key.replace(pos, 1, "QUESTION"); break;
-            case ' ': key.replace(pos, 1, "SPACE"); break;
+std::string makeStringValidKey(std::string_view key) {
+    std::string result;
+
+    for ( auto c : key ) {
+        if ( std::isalnum(c) ) {
+            result += c;
         }
-        pos++;
+        else {
+            char buf[5];
+            // Ignore smaller write, it doesn't really matter for now
+            snprintf(buf, sizeof(buf), "\\x%02X", c);
+            result += buf;
+        }
     }
+
+    return result;
 }
 
 ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expiration_time, ErrorResultCallback* cb) {
     auto json_key = key->ToJSON()->ToStdString();
-    makeStringValidKey(json_key);
+    auto valid_key = makeStringValidKey(json_key);
     auto json_value = value->ToJSON()->ToStdString();
     uint64_t rev = 0;
 
-    auto stat = kvStore_PutString(&rev, keyVal, json_key.c_str(), json_value.c_str());
+    auto stat = kvStore_PutString(&rev, keyVal, valid_key.c_str(), json_value.c_str());
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
@@ -90,8 +81,8 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
 ValResult Nats::DoGet(ValPtr key, ValResultCallback* cb) {
     kvEntry* entry = NULL;
     auto json_key = key->ToJSON()->ToStdString();
-    makeStringValidKey(json_key);
-    auto stat = kvStore_Get(&entry, keyVal, json_key.c_str());
+    auto valid_key = makeStringValidKey(json_key);
+    auto stat = kvStore_Get(&entry, keyVal, valid_key.c_str());
     if ( stat != NATS_OK )
         return nonstd::unexpected<std::string>(natsStatus_GetText(stat));
 
@@ -113,8 +104,9 @@ ValResult Nats::DoGet(ValPtr key, ValResultCallback* cb) {
 
 ErrorResult Nats::DoErase(ValPtr key, ErrorResultCallback* cb) {
     auto json_key = key->ToJSON()->ToStdString();
+    auto valid_key = makeStringValidKey(json_key);
 
-    auto stat = kvStore_Delete(keyVal, json_key.c_str());
+    auto stat = kvStore_Delete(keyVal, valid_key.c_str());
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
