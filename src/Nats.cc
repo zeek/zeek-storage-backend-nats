@@ -70,7 +70,17 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
     auto json_value = value->ToJSON()->ToStdString();
     uint64_t rev = 0;
 
-    auto stat = kvStore_PutString(&rev, keyVal, valid_key.c_str(), json_value.c_str());
+    natsStatus stat;
+    if ( overwrite )
+        stat = kvStore_PutString(&rev, keyVal, valid_key.c_str(), json_value.c_str());
+    else
+        stat = kvStore_CreateString(&rev, keyVal, valid_key.c_str(), json_value.c_str());
+
+    // TODO: If a key exists, the GetText result is just "Error" because
+    // stat == NATS_ERR. That's pretty unintuitive, but I'd also be worried that
+    // catching that error means we catch more than we want. So may have to check
+    // if the key exists manually before putting it, rather than using Put/Create
+    // based on `overwrite`
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
