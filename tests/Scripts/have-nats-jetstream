@@ -1,0 +1,4 @@
+#!/bin/sh
+
+zeek -N Storage::Nats && which nats-server > /dev/null
+exit $?

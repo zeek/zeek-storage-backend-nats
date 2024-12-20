@@ -28,6 +28,7 @@ zeek_plugin_scripts(
         scripts/__preload__.zeek
         scripts/types.zeek
         scripts/Storage/Nats/__load__.zeek
+        scripts/Storage/Nats/main.zeek
 )
 zeek_plugin_end()
 
