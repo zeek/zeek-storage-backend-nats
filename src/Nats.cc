@@ -12,7 +12,7 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 
     // TODO: If I'm being thorough, this would be a `natsConnection_Connect` call
     // and the record would have all of the `__natsOptions` options. But there are
-    // like 50 options.
+    // like 50 options. This would then later call `natsOptions_Destroy`
     stat = natsConnection_ConnectTo(&conn, url->CheckString());
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
@@ -28,7 +28,6 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     kvConfig_Init(&kvc);
 
     kvc.Bucket = config->GetField<StringVal>("bucket")->Get()->CheckString();
-    kvc.History = 10;
 
     stat = js_CreateKeyValue(&keyVal, jetstream, &kvc);
     if ( stat != NATS_OK )
@@ -38,9 +37,11 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 }
 
 void Nats::Done() {
-    natsConnection_Destroy(conn);
     kvStore_Destroy(keyVal);
     jsCtx_Destroy(jetstream);
+    natsConnection_Destroy(conn);
+    nats_Close();
+
     conn = nullptr;
     jetstream = nullptr;
     keyVal = nullptr;
