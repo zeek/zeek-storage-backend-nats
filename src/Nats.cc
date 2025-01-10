@@ -29,6 +29,15 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 
     kvc.Bucket = config->GetField<StringVal>("bucket")->Get()->CheckString();
 
+    if ( config->HasField("bucket_max_size") )
+        kvc.MaxBytes = config->GetField<CountVal>("bucket_max_size")->Get();
+
+    if ( config->HasField("value_max_size") )
+        kvc.MaxValueSize = config->GetField<CountVal>("value_max_size")->Get();
+
+    if ( config->HasField("ttl") )
+        kvc.MaxValueSize = config->GetField<CountVal>("ttl")->Get();
+
     stat = js_CreateKeyValue(&keyVal, jetstream, &kvc);
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
