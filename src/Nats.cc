@@ -75,7 +75,7 @@ std::string makeStringValidKey(std::string_view key) {
         else {
             char buf[5];
             // Ignore smaller write, it doesn't really matter for now
-            snprintf(buf, sizeof(buf), "\\x%02X", c);
+            snprintf(buf, sizeof(buf), "\\x%02X", static_cast<unsigned char>(c));
             result += buf;
         }
     }
