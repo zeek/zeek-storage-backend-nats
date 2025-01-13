@@ -19,7 +19,16 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 
     jsOptions jsOpts;
     jsOptions_Init(&jsOpts);
+    // TODO: When async is done this should be an option, also look at other
+    // async options
     jsOpts.PublishAsync.MaxPending = 256;
+
+    if ( config->HasField("jetstream_prefix") )
+        jsOpts.Prefix = config->GetField<StringVal>("jetstream_prefix")->Get()->CheckString();
+    if ( config->HasField("jetstream_domain") )
+        jsOpts.Domain = config->GetField<StringVal>("jetstream_domain")->Get()->CheckString();
+    if ( config->HasField("wait") )
+        jsOpts.Wait = config->GetField<IntVal>("wait")->Get();
 
     // Create JetStream Context
     natsConnection_JetStream(&jetstream, conn, &jsOpts);

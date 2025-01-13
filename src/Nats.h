@@ -3,14 +3,13 @@
 #pragma once
 
 #include <nats/nats.h>
-#include <zeek/iosource/IOSource.h>
 #include <zeek/storage/Backend.h>
 
 namespace zeek::storage::backends::nats {
 
-class Nats : public zeek::storage::Backend, public iosource::IOSource {
+class Nats : public zeek::storage::Backend {
 public:
-    Nats() : Backend(true), IOSource(true) {}
+    Nats() : Backend(true) {}
 
     static Backend* Instantiate() { return new Nats(); }
     const char* Tag() override { return "NatsStorage"; }
@@ -21,10 +20,6 @@ public:
                       ErrorResultCallback* cb = nullptr) override;
     ValResult DoGet(ValPtr key, ValResultCallback* cb = nullptr) override;
     ErrorResult DoErase(ValPtr key, ErrorResultCallback* cb = nullptr) override;
-
-    // IOSource interface
-    double GetNextTimeout() override { return -1; }
-    void Process() override {}
 
 private:
     natsConnection* conn = nullptr;
