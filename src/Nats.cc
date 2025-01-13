@@ -3,6 +3,7 @@
 #include <nats/nats.h>
 #include <zeek/Func.h>
 #include <zeek/ZeekString.h>
+#include <zeek/util.h>
 
 namespace zeek::storage::backends::nats {
 
@@ -101,7 +102,7 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
     // if the key exists manually before putting it, rather than using Put/Create
     // based on `overwrite`
     if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
+        return util::fmt("Put operation failed: %s", natsStatus_GetText(stat));
 
     return std::nullopt;
 }
@@ -112,7 +113,7 @@ ValResult Nats::DoGet(ValPtr key, ValResultCallback* cb) {
     auto valid_key = makeStringValidKey(json_key);
     auto stat = kvStore_Get(&entry, keyVal, valid_key.c_str());
     if ( stat != NATS_OK )
-        return nonstd::unexpected<std::string>(natsStatus_GetText(stat));
+        return nonstd::unexpected<std::string>(util::fmt("Get operation failed: %s", natsStatus_GetText(stat)));
 
     // Extract the string
     auto retrieved = kvEntry_ValueString(entry);
@@ -136,7 +137,7 @@ ErrorResult Nats::DoErase(ValPtr key, ErrorResultCallback* cb) {
 
     auto stat = kvStore_Delete(keyVal, valid_key.c_str());
     if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
+        return util::fmt("Erase operation failed: %s", natsStatus_GetText(stat));
 
     return std::nullopt;
 }
