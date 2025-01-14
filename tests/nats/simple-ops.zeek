@@ -32,7 +32,7 @@ event zeek_init()
 	    $async_mode=F, $overwrite=T ]);
 	print "put 2:", put_2;
 	local get_2 = Storage::get(b, "one", F);
-	print "get 2:", get_1;
+	print "get 2:", get_2;
 	local del_1 = Storage::erase(b, "one", F);
 	print "del 1:", del_1;
 
