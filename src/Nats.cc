@@ -11,31 +11,39 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     auto url = config->GetField<StringVal>("url")->Get();
     natsStatus stat;
 
-    // TODO: If I'm being thorough, this would be a `natsConnection_Connect` call
-    // and the record would have all of the `__natsOptions` options. But there are
-    // like 50 options. This would then later call `natsOptions_Destroy`
-    stat = natsConnection_ConnectTo(&conn, url->CheckString());
+    natsOptions* nats_opts;
+    natsOptions_Create(&nats_opts);
+    natsOptions_SetURL(nats_opts, url->CheckString());
+    if ( config->HasField("creds") )
+        natsOptions_SetUserCredentialsFromFiles(nats_opts, config->GetField<StringVal>("creds")->Get()->CheckString(),
+                                                nullptr);
+    stat = natsConnection_Connect(&conn, nats_opts);
+    natsOptions_Destroy(nats_opts);
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
-    jsOptions jsOpts;
-    jsOptions_Init(&jsOpts);
+    jsOptions js_opts;
+    jsOptions_Init(&js_opts);
     // TODO: When async is done this should be an option, also look at other
     // async options
-    jsOpts.PublishAsync.MaxPending = 256;
+    js_opts.PublishAsync.MaxPending = 256;
 
     if ( config->HasField("jetstream_prefix") )
-        jsOpts.Prefix = config->GetField<StringVal>("jetstream_prefix")->Get()->CheckString();
+        js_opts.Prefix = config->GetField<StringVal>("jetstream_prefix")->Get()->CheckString();
     if ( config->HasField("jetstream_domain") )
-        jsOpts.Domain = config->GetField<StringVal>("jetstream_domain")->Get()->CheckString();
+        js_opts.Domain = config->GetField<StringVal>("jetstream_domain")->Get()->CheckString();
     if ( config->HasField("wait") )
-        jsOpts.Wait = config->GetField<IntVal>("wait")->Get();
+        js_opts.Wait = config->GetField<IntVal>("wait")->Get();
 
     // Create JetStream Context
-    natsConnection_JetStream(&jetstream, conn, &jsOpts);
+    stat = natsConnection_JetStream(&jetstream, conn, &js_opts);
+    if ( stat != NATS_OK )
+        return natsStatus_GetText(stat);
 
     kvConfig kvc;
-    kvConfig_Init(&kvc);
+    stat = kvConfig_Init(&kvc);
+    if ( stat != NATS_OK )
+        return natsStatus_GetText(stat);
 
     kvc.Bucket = config->GetField<StringVal>("bucket")->Get()->CheckString();
 
@@ -48,7 +56,10 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     if ( config->HasField("ttl") )
         kvc.MaxValueSize = config->GetField<CountVal>("ttl")->Get();
 
-    stat = js_CreateKeyValue(&keyVal, jetstream, &kvc);
+    if ( config->GetField<BoolVal>("create_kv")->Get() )
+        stat = js_CreateKeyValue(&keyVal, jetstream, &kvc);
+    else
+        stat = js_KeyValue(&keyVal, jetstream, kvc.Bucket);
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 

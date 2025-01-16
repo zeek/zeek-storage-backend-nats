@@ -21,6 +21,7 @@ event zeek_init()
 	local opts: Nats::NatsOptions;
 	opts$bucket = "TEST_BUCKET";
 	opts$url = "nats://localhost:" + getenv("NATS_PORT");
+	opts$create_kv = T;
 	local b = Storage::open_backend(Storage::NATS, opts, str, str);
 
 	local put_1 = Storage::put([ $backend=b, $key="one", $value="val1",
