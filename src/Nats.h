@@ -21,6 +21,8 @@ public:
     ValResult DoGet(ValPtr key, ValResultCallback* cb = nullptr) override;
     ErrorResult DoErase(ValPtr key, ErrorResultCallback* cb = nullptr) override;
 
+    void Expire() override;
+
 private:
     natsConnection* conn = nullptr;
     jsCtx* jetstream = nullptr;

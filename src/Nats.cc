@@ -5,6 +5,8 @@
 #include <zeek/ZeekString.h>
 #include <zeek/util.h>
 
+#include <iostream>
+
 namespace zeek::storage::backends::nats {
 
 ErrorResult Nats::DoOpen(RecordValPtr config) {
@@ -37,6 +39,27 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 
     // Create JetStream Context
     stat = natsConnection_JetStream(&jetstream, conn, &js_opts);
+    if ( stat != NATS_OK )
+        return natsStatus_GetText(stat);
+
+    jsStreamInfo* si = nullptr;
+
+    // First check if the stream already exists.
+    stat = js_GetStreamInfo(&si, jetstream, "zeek", nullptr, nullptr);
+    if ( stat == NATS_NOT_FOUND ) {
+        jsErrCode jerr;
+        jsStreamConfig cfg;
+        jsStreamConfig_Init(&cfg);
+        cfg.Name = "zeek";
+        auto subject = "zeek.expire.*";
+        cfg.Subjects = (const char* [1]){subject};
+        cfg.SubjectsLen = 1;
+        cfg.MaxBytes = 1000;
+        stat = js_AddStream(&si, jetstream, &cfg, nullptr, &jerr);
+        if ( jerr != 0 )
+            return util::fmt("Creating Jetstream stream failed with error code %d", jerr);
+    }
+
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
@@ -115,6 +138,17 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
     if ( stat != NATS_OK )
         return util::fmt("Put operation failed: %s", natsStatus_GetText(stat));
 
+    if ( expiration_time > 0.0 ) {
+        std::string exp_string = util::fmt("%f", expiration_time);
+        jsErrCode jerr;
+        stat = js_Publish(nullptr, jetstream, util::fmt("zeek.expire.%s", valid_key.c_str()), exp_string.c_str(),
+                          exp_string.length(), nullptr, &jerr);
+        if ( jerr != 0 )
+            return util::fmt("Publishing to Jetstream stream failed with error code %d", jerr);
+        if ( stat != NATS_OK )
+            return util::fmt("Put operation succeeded, but expiration stream failed: %s", natsStatus_GetText(stat));
+    }
+
     return std::nullopt;
 }
 
@@ -152,4 +186,6 @@ ErrorResult Nats::DoErase(ValPtr key, ErrorResultCallback* cb) {
 
     return std::nullopt;
 }
+
+void Nats::Expire() {}
 } // namespace zeek::storage::backends::nats
