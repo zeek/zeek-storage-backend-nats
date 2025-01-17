@@ -27,5 +27,6 @@ private:
     natsConnection* conn = nullptr;
     jsCtx* jetstream = nullptr;
     kvStore* keyVal = nullptr;
+    natsSubscription* expiration_consumer = nullptr;
 };
 } // namespace zeek::storage::backends::nats

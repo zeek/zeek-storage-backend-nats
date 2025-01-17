@@ -46,13 +46,16 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 
     // First check if the stream already exists.
     stat = js_GetStreamInfo(&si, jetstream, "zeek", nullptr, nullptr);
+
+    jsErrCode jerr;
     if ( stat == NATS_NOT_FOUND ) {
-        jsErrCode jerr;
         jsStreamConfig cfg;
         jsStreamConfig_Init(&cfg);
+        // TODO: Configure each of these
         cfg.Name = "zeek";
         auto subject = "zeek.expire.*";
-        cfg.Subjects = (const char* [1]){subject};
+        const char* subject_arr[] = {subject};
+        cfg.Subjects = subject_arr;
         cfg.SubjectsLen = 1;
         cfg.MaxBytes = 1000;
         stat = js_AddStream(&si, jetstream, &cfg, nullptr, &jerr);
@@ -60,6 +63,10 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
             return util::fmt("Creating Jetstream stream failed with error code %d", jerr);
     }
 
+    if ( stat != NATS_OK )
+        return natsStatus_GetText(stat);
+
+    stat = js_PullSubscribe(&expiration_consumer, jetstream, "zeek.expire.*", "zeek", nullptr, nullptr, &jerr);
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
@@ -91,6 +98,7 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 
 void Nats::Done() {
     kvStore_Destroy(keyVal);
+    natsSubscription_Destroy(expiration_consumer);
     jsCtx_Destroy(jetstream);
     natsConnection_Destroy(conn);
     nats_Close();
@@ -138,21 +146,38 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
     if ( stat != NATS_OK )
         return util::fmt("Put operation failed: %s", natsStatus_GetText(stat));
 
-    if ( expiration_time > 0.0 ) {
-        std::string exp_string = util::fmt("%f", expiration_time);
-        jsErrCode jerr;
-        stat = js_Publish(nullptr, jetstream, util::fmt("zeek.expire.%s", valid_key.c_str()), exp_string.c_str(),
-                          exp_string.length(), nullptr, &jerr);
-        if ( jerr != 0 )
-            return util::fmt("Publishing to Jetstream stream failed with error code %d", jerr);
-        if ( stat != NATS_OK )
-            return util::fmt("Put operation succeeded, but expiration stream failed: %s", natsStatus_GetText(stat));
+    // Make sure this is the only key with an entry in the subject
+    // TODO: Refactor this and use it in erase as well?
+    natsMsgList msg_list;
+    jsErrCode jerr;
+    stat = natsSubscription_Fetch(&msg_list, expiration_consumer, 1024, 50, &jerr);
+    // Only ack if we get a valid response
+    if ( stat == NATS_OK && jerr == 0 ) {
+        for ( int i = 0; i < msg_list.Count; i++ ) {
+            natsMsg_Ack(msg_list.Msgs[i], nullptr);
+        }
+        natsMsgList_Destroy(&msg_list);
+    }
+
+    // TODO: Probably sort these somehow?
+    for ( int i = 0; i < msg_list.Count; i++ ) {
+        if ( expiration_time > 0.0 ) {
+            std::string exp_string = util::fmt("%f", expiration_time + run_state::network_time);
+            jsErrCode jerr;
+            stat = js_Publish(nullptr, jetstream, util::fmt("zeek.expire.%s", valid_key.c_str()), exp_string.c_str(),
+                              exp_string.length(), nullptr, &jerr);
+            if ( jerr != 0 )
+                return util::fmt("Publishing to Jetstream stream failed with error code %d", jerr);
+            if ( stat != NATS_OK )
+                return util::fmt("Put operation succeeded, but expiration stream failed: %s", natsStatus_GetText(stat));
+        }
     }
 
     return std::nullopt;
 }
 
 ValResult Nats::DoGet(ValPtr key, ValResultCallback* cb) {
+    Expire();
     kvEntry* entry = NULL;
     auto json_key = key->ToJSON()->ToStdString();
     auto valid_key = makeStringValidKey(json_key);
@@ -187,5 +212,36 @@ ErrorResult Nats::DoErase(ValPtr key, ErrorResultCallback* cb) {
     return std::nullopt;
 }
 
-void Nats::Expire() {}
+void Nats::Expire() {
+    // TODO: Figure out if messages in list need destroyed
+    natsMsgList msg_list;
+    jsErrCode jerr;
+    natsStatus stat = natsSubscription_Fetch(&msg_list, expiration_consumer, 1024, 50, &jerr);
+    if ( stat != NATS_OK || jerr != 0 )
+        return;
+
+    // TODO: Probably sort these somehow?
+    for ( int i = 0; i < msg_list.Count; i++ ) {
+        auto msg = msg_list.Msgs[i];
+        float expiration_time;
+        try {
+            expiration_time = std::stof(natsMsg_GetData(msg));
+        } catch ( ... ) {
+            // Blindly ack any that have an invalid format
+            natsMsg_Ack(msg, nullptr);
+            continue;
+        }
+
+        if ( run_state::network_time > expiration_time ) {
+            std::cout << "EXPIRING " << natsMsg_GetSubject(msg);
+            std::cout << "AT: " << run_state::network_time << std::endl;
+            // TODO: Safety! :)
+            auto stat = kvStore_Delete(keyVal, &natsMsg_GetSubject(msg)[12]);
+            natsMsg_Ack(msg_list.Msgs[i], nullptr);
+        }
+    }
+
+    std::cout << "\n\nDone with expiring :)\n";
+    natsMsgList_Destroy(&msg_list);
+}
 } // namespace zeek::storage::backends::nats
