@@ -40,34 +40,6 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     if ( stat != NATS_OK )
         return natsStatus_GetText(stat);
 
-    jsStreamInfo* si = nullptr;
-
-    // First check if the stream already exists.
-    stat = js_GetStreamInfo(&si, jetstream, "zeek", nullptr, nullptr);
-
-    jsErrCode jerr;
-    if ( stat == NATS_NOT_FOUND ) {
-        jsStreamConfig cfg;
-        jsStreamConfig_Init(&cfg);
-        // TODO: Configure each of these
-        cfg.Name = "zeek";
-        auto subject = "zeek.expire.*";
-        const char* subject_arr[] = {subject};
-        cfg.Subjects = subject_arr;
-        cfg.SubjectsLen = 1;
-        cfg.MaxBytes = 1000;
-        stat = js_AddStream(&si, jetstream, &cfg, nullptr, &jerr);
-        if ( jerr != 0 )
-            return util::fmt("Creating Jetstream stream failed with error code %d", jerr);
-    }
-
-    if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
-
-    stat = js_PullSubscribe(&expiration_consumer, jetstream, "zeek.expire.*", "zeek", nullptr, nullptr, &jerr);
-    if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
-
     kvConfig kvc;
     stat = kvConfig_Init(&kvc);
     if ( stat != NATS_OK )
@@ -96,7 +68,6 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
 
 void Nats::Done() {
     kvStore_Destroy(keyVal);
-    natsSubscription_Destroy(expiration_consumer);
     jsCtx_Destroy(jetstream);
     natsConnection_Destroy(conn);
     nats_Close();
@@ -144,30 +115,10 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
     if ( stat != NATS_OK )
         return util::fmt("Put operation failed: %s", natsStatus_GetText(stat));
 
-    // Make sure this is the only key with an entry in the subject
-    // TODO: Refactor this and use it in erase as well?
-    natsMsgList msg_list;
-    jsErrCode jerr;
-    // TODO: This removes all keys not just this one. oops
-    stat = natsSubscription_Fetch(&msg_list, expiration_consumer, 1024, 50, &jerr);
-    // Only ack if we get a valid response
-    if ( stat == NATS_OK && jerr == 0 ) {
-        for ( int i = 0; i < msg_list.Count; i++ ) {
-            natsMsg_Ack(msg_list.Msgs[i], nullptr);
-        }
-    }
-    natsMsgList_Destroy(&msg_list);
-
     // TODO: Probably sort these somehow?
     if ( expiration_time > 0.0 ) {
         std::string exp_string = util::fmt("%f", expiration_time + run_state::network_time);
-        jsErrCode jerr;
-        stat = js_Publish(nullptr, jetstream, util::fmt("zeek.expire.%s", valid_key.c_str()), exp_string.c_str(),
-                          exp_string.length(), nullptr, &jerr);
-        if ( jerr != 0 )
-            return util::fmt("Publishing to Jetstream stream failed with error code %d", jerr);
-        if ( stat != NATS_OK )
-            return util::fmt("Put operation succeeded, but expiration stream failed: %s", natsStatus_GetText(stat));
+        stat = kvStore_PutString(&rev, keyVal, util::fmt("expire.%s", valid_key.c_str()), exp_string.c_str());
     }
 
     return std::nullopt;
@@ -209,31 +160,31 @@ ErrorResult Nats::DoErase(ValPtr key, ErrorResultCallback* cb) {
 }
 
 void Nats::Expire() {
-    natsMsgList msg_list;
-    jsErrCode jerr;
-    natsStatus stat = natsSubscription_Fetch(&msg_list, expiration_consumer, 1024, 50, &jerr);
-    if ( stat != NATS_OK || jerr != 0 )
-        return;
+    kvKeysList keys;
+    kvEntry* entry = nullptr;
+    auto subject = "expire.*";
+    const char* subject_arr[] = {subject};
+    kvStore_KeysWithFilters(&keys, keyVal, subject_arr, 1, nullptr);
+    for ( int i = 0; i < keys.Count; i++ ) {
+        auto key = keys.Keys[i];
+        auto stat = kvStore_Get(&entry, keyVal, key);
+        if ( stat != NATS_OK )
+            continue;
 
-    // TODO: Probably sort these somehow?
-    for ( int i = 0; i < msg_list.Count; i++ ) {
-        auto msg = msg_list.Msgs[i];
+        // Extract the string
+        auto retrieved = kvEntry_ValueString(entry);
         float expiration_time;
         try {
-            expiration_time = std::stof(natsMsg_GetData(msg));
+            expiration_time = std::stof(retrieved);
         } catch ( ... ) {
-            // Blindly ack any that have an invalid format
-            natsMsg_Ack(msg, nullptr);
             continue;
         }
 
         if ( run_state::network_time > expiration_time ) {
-            // TODO: Safety! :)
-            auto stat = kvStore_Delete(keyVal, &natsMsg_GetSubject(msg)[12]);
-            natsMsg_Ack(msg_list.Msgs[i], nullptr);
+            stat = kvStore_Delete(keyVal, &key[7]);
+            stat = kvStore_Delete(keyVal, key);
         }
     }
-
-    natsMsgList_Destroy(&msg_list);
+    kvKeysList_Destroy(&keys);
 }
 } // namespace zeek::storage::backends::nats
