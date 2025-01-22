@@ -1,13 +1,14 @@
 #include "Nats.h"
 
 #include <nats/nats.h>
+#include <storage/Backend.h>
 #include <zeek/Func.h>
 #include <zeek/ZeekString.h>
 #include <zeek/util.h>
 
 namespace zeek::storage::backends::nats {
 
-ErrorResult Nats::DoOpen(RecordValPtr config) {
+ErrorResult Nats::DoOpen(RecordValPtr config, OpenResultCallback* cb) {
     auto url = config->GetField<StringVal>("url")->Get();
     natsStatus stat;
 
@@ -70,7 +71,7 @@ ErrorResult Nats::DoOpen(RecordValPtr config) {
     return std::nullopt;
 }
 
-void Nats::Done() {
+ErrorResult Nats::DoDone(ErrorResultCallback* cb) {
     kvStore_Destroy(key_val);
     jsCtx_Destroy(jetstream);
     natsConnection_Destroy(conn);
@@ -79,6 +80,8 @@ void Nats::Done() {
     conn = nullptr;
     jetstream = nullptr;
     key_val = nullptr;
+
+    return std::nullopt;
 }
 
 std::string makeStringValidKey(std::string_view key) {
