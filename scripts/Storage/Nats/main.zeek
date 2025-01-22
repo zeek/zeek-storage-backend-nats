@@ -7,15 +7,12 @@ export {
 		url: string &default="nats://localhost:4222";
 		## Path to the credentials file
 		creds: string &optional;
-		## Path to the credentials file
-		## The prefix for the Jetstream
-		jetstream_prefix: string &optional;
-		## The domain for the Jetstream. Cannot be set if prefix is.
-		domain_prefix: string &optional;
 		## Amount of time (in milliseconds) to wait for Jetstream API requests
 		wait: int &optional;
 		## The bucket to use for key-value operations
 		bucket: string;
+        ## The prefix for expiration keys to differentiate from the key itself
+		expiration_prefix: string &default="expire";
 		## Whether this should create a new key-value store or use an existing one.
 		## Note that the only key/value configuration available if not creating a new
 		## store is the bucket.
