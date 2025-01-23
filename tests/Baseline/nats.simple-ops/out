@@ -4,3 +4,8 @@ get 1:, val1
 put 2:, T
 get 2:, val2
 del 1:, T
+strict_put 1:, T
+strict_get 1:, strict_val1
+strict_put 2:, T
+strict_get 2:, strict_val2
+strict_del 1:, T

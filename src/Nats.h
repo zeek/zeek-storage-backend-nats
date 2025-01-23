@@ -24,9 +24,12 @@ public:
     void Expire() override;
 
 private:
+    std::string KeyFromVal(ValPtr key);
+
     natsConnection* conn = nullptr;
     jsCtx* jetstream = nullptr;
     kvStore* key_val = nullptr;
     std::string expiration_prefix = "";
+    bool strict;
 };
 } // namespace zeek::storage::backends::nats

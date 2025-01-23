@@ -15,6 +15,7 @@
 @load Storage/Nats
 
 type str: string;
+type port_: port;
 
 event zeek_init()
 	{
@@ -38,4 +39,12 @@ event zeek_init()
 	print "get 1:", get_1;
 
 	Storage::close_backend(b);
+
+	local strict_opts: Nats::NatsOptions;
+	strict_opts$strict = T;
+	strict_opts$bucket = "TEST_BUCKET";
+	strict_opts$url = "nats://localhost:" + getenv("NATS_PORT");
+	strict_opts$create_kv = T;
+	# Strict cannot have a non-string key
+	local strict_b = Storage::open_backend(Storage::NATS, opts, port_, str);
 	}
