@@ -9,7 +9,7 @@ namespace zeek::storage::backends::nats {
 
 class Nats : public zeek::storage::Backend {
 public:
-    Nats() : Backend(true) {}
+    Nats() : Backend(false) {}
 
     static Backend* Instantiate() { return new Nats(); }
     const char* Tag() override { return "NatsStorage"; }

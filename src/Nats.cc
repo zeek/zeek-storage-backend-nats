@@ -88,9 +88,8 @@ std::string makeStringValidKey(std::string_view key) {
     std::string result;
 
     for ( auto c : key ) {
-        if ( std::isalnum(c) ) {
+        if ( std::isalnum(c) )
             result += c;
-        }
         else {
             char buf[5];
             // Ignore smaller write, it doesn't really matter for now
@@ -114,11 +113,15 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
     else
         stat = kvStore_CreateString(&rev, key_val, valid_key.c_str(), json_value.c_str());
 
-    // TODO: If a key exists, the GetText result is just "Error" because
-    // stat == NATS_ERR. That's pretty unintuitive, but I'd also be worried that
-    // catching that error means we catch more than we want. So may have to check
-    // if the key exists manually before putting it, rather than using Put/Create
-    // based on `overwrite`
+    // Workaround: If the key exists and overwrite is false, the error is just "Error"
+    // Add a custom error to make it more user-friendly, but with an extra request.
+    if ( stat == NATS_ERR && ! overwrite ) {
+        kvEntry* entry = nullptr;
+        stat = kvStore_Get(&entry, key_val, valid_key.c_str());
+        if ( stat == NATS_OK && entry != nullptr )
+            return "Put operation failed: Key exists and overwrite not set";
+    }
+
     if ( stat != NATS_OK )
         return util::fmt("Put operation failed: %s", natsStatus_GetText(stat));
 
@@ -133,7 +136,7 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
 }
 
 ValResult Nats::DoGet(ValPtr key, ValResultCallback* cb) {
-    kvEntry* entry = NULL;
+    kvEntry* entry = nullptr;
     auto json_key = key->ToJSON()->ToStdString();
     auto valid_key = makeStringValidKey(json_key);
     auto stat = kvStore_Get(&entry, key_val, valid_key.c_str());
@@ -194,11 +197,15 @@ void Nats::Expire() {
         }
 
         if ( run_state::network_time > expiration_time ) {
+            stat = kvStore_Delete(key_val, key);
+            // If we (somehow) have a key that's too short, abort here
+            if ( strlen(key) <= expiration_prefix.length() + 1 )
+                continue;
             // Everything after expiration_prefix plus dot is the value's normal key
             stat = kvStore_Delete(key_val, &key[expiration_prefix.length() + 1]);
-            stat = kvStore_Delete(key_val, key);
         }
     }
+
     kvKeysList_Destroy(&keys);
 }
 } // namespace zeek::storage::backends::nats
