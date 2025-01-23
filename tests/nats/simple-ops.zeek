@@ -47,13 +47,13 @@ event zeek_init()
 	strict_opts$create_kv = T;
 	local strict_b = Storage::open_backend(Storage::NATS, opts, str, str);
 
-	local strict_put_1 = Storage::put([ $backend=strict_b, $key="strict_one", $value="strict_val1",
-	    $async_mode=F, $overwrite=T ]);
+	local strict_put_1 = Storage::put([ $backend=strict_b, $key="strict_one",
+	    $value="strict_val1", $async_mode=F, $overwrite=T ]);
 	print "strict_put 1:", strict_put_1;
 	local strict_get_1 = Storage::get(strict_b, "strict_one", F);
 	print "strict_get 1:", strict_get_1;
-	local strict_put_2 = Storage::put([ $backend=strict_b, $key="strict_one", $value="strict_val2",
-	    $async_mode=F, $overwrite=T ]);
+	local strict_put_2 = Storage::put([ $backend=strict_b, $key="strict_one",
+	    $value="strict_val2", $async_mode=F, $overwrite=T ]);
 	print "strict_put 2:", strict_put_2;
 	local strict_get_2 = Storage::get(strict_b, "strict_one", F);
 	print "strict_get 2:", strict_get_2;

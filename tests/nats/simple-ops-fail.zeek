@@ -7,7 +7,7 @@
 # @TEST-EXEC: btest-bg-run nats nats-server -config ../simple-ops-fail.conf
 # @TEST-EXEC-FAIL: zeek -b %INPUT > out 2>&1
 # @TEST-EXEC: btest-bg-wait -k 0
-# @TEST-EXEC: btest-diff out
+# @TEST-EXEC: TEST_DIFF_CANONIFIER=$SCRIPTS/diff-remove-abspath btest-diff out
 
 @load-plugin Storage::Nats
 
