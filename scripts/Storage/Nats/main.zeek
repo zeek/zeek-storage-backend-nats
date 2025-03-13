@@ -2,7 +2,7 @@ module Nats;
 
 export {
 	## Options record for the NATS Storage backend
-	type NatsOptions: record {
+	type Options: record {
 		## Path to the database's URL
 		url: string &default="nats://localhost:4222";
 		## Whether this is "strict" mode or not. Strict mode will force keys to be strings
@@ -15,7 +15,7 @@ export {
 		wait: int &optional;
 		## The bucket to use for key-value operations
 		bucket: string;
-        ## The prefix for expiration keys to differentiate from the key itself
+		## The prefix for expiration keys to differentiate from the key itself
 		expiration_prefix: string &default="expire";
 		## Whether this should create a new key-value store or use an existing one.
 		## Note that the only key/value configuration available if not creating a new
@@ -29,3 +29,7 @@ export {
 		ttl: count &optional;
 	};
 }
+
+redef record Storage::BackendOptions += {
+	nats: Nats::Options &optional;
+};

@@ -4,14 +4,17 @@
 #include <storage/Backend.h>
 #include <zeek/Func.h>
 #include <zeek/ZeekString.h>
+#include <zeek/storage/ReturnCode.h>
 #include <zeek/util.h>
 
 namespace zeek::storage::backends::nats {
 
-ErrorResult Nats::DoOpen(RecordValPtr config, OpenResultCallback* cb) {
+OperationResult Nats::DoOpen(OpenResultCallback* cb, RecordValPtr options) {
+    RecordValPtr config = options->GetField<RecordVal>("nats");
     strict = config->GetField<BoolVal>("strict")->Get();
     if ( strict && key_type->Tag() != TYPE_STRING )
-        return util::fmt("NATS strict mode can only have string keys, found '%s'", key_type->GetName().c_str());
+        return {ReturnCode::CONNECTION_FAILED,
+                util::fmt("NATS strict mode can only have string keys, found '%s'", key_type->GetName().c_str())};
 
     auto url = config->GetField<StringVal>("url")->Get();
     natsStatus stat;
@@ -25,7 +28,7 @@ ErrorResult Nats::DoOpen(RecordValPtr config, OpenResultCallback* cb) {
     stat = natsConnection_Connect(&conn, nats_opts);
     natsOptions_Destroy(nats_opts);
     if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
+        return {ReturnCode::CONNECTION_FAILED, natsStatus_GetText(stat)};
 
     jsOptions js_opts;
     jsOptions_Init(&js_opts);
@@ -39,12 +42,12 @@ ErrorResult Nats::DoOpen(RecordValPtr config, OpenResultCallback* cb) {
     // Create JetStream Context
     stat = natsConnection_JetStream(&jetstream, conn, &js_opts);
     if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
+        return {ReturnCode::CONNECTION_FAILED, natsStatus_GetText(stat)};
 
     kvConfig kvc;
     stat = kvConfig_Init(&kvc);
     if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
+        return {ReturnCode::CONNECTION_FAILED, natsStatus_GetText(stat)};
 
     kvc.Bucket = config->GetField<StringVal>("bucket")->Get()->CheckString();
 
@@ -63,19 +66,19 @@ ErrorResult Nats::DoOpen(RecordValPtr config, OpenResultCallback* cb) {
         stat = js_KeyValue(&key_val, jetstream, kvc.Bucket);
 
     if ( stat != NATS_OK )
-        return natsStatus_GetText(stat);
+        return {ReturnCode::CONNECTION_FAILED, natsStatus_GetText(stat)};
 
     if ( config->HasField("expiration_prefix") )
         expiration_prefix = config->GetField<StringVal>("expiration_prefix")->Get()->CheckString();
 
     if ( expiration_prefix.empty() )
-        return "Expiration prefix cannot be empty; omit the field for default";
+        return {ReturnCode::CONNECTION_FAILED, "Expiration prefix cannot be empty; omit the field for default"};
 
 
-    return std::nullopt;
+    return {ReturnCode::SUCCESS};
 }
 
-ErrorResult Nats::DoDone(ErrorResultCallback* cb) {
+OperationResult Nats::DoClose(OperationResultCallback* cb) {
     kvStore_Destroy(key_val);
     jsCtx_Destroy(jetstream);
     natsConnection_Destroy(conn);
@@ -85,7 +88,7 @@ ErrorResult Nats::DoDone(ErrorResultCallback* cb) {
     jetstream = nullptr;
     key_val = nullptr;
 
-    return std::nullopt;
+    return {ReturnCode::SUCCESS};
 }
 
 std::string make_string_valid_key(std::string_view key) {
@@ -117,7 +120,8 @@ std::string Nats::KeyFromVal(ValPtr key) {
 }
 
 
-ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expiration_time, ErrorResultCallback* cb) {
+OperationResult Nats::DoPut(OperationResultCallback* cb, ValPtr key, ValPtr value, bool overwrite,
+                            double expiration_time) {
     auto key_string = KeyFromVal(key);
     auto json_value = value->ToJSON()->ToStdString();
     uint64_t rev = 0;
@@ -128,17 +132,8 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
     else
         stat = kvStore_CreateString(&rev, key_val, key_string.c_str(), json_value.c_str());
 
-    // Workaround: If the key exists and overwrite is false, the error is just "Error"
-    // Add a custom error to make it more user-friendly, but with an extra request.
-    if ( stat == NATS_ERR && ! overwrite ) {
-        kvEntry* entry = nullptr;
-        stat = kvStore_Get(&entry, key_val, key_string.c_str());
-        if ( stat == NATS_OK && entry != nullptr )
-            return "Put operation failed: Key exists and overwrite not set";
-    }
-
     if ( stat != NATS_OK )
-        return util::fmt("Put operation failed: %s", natsStatus_GetText(stat));
+        return {ReturnCode::OPERATION_FAILED, util::fmt("Put operation failed: %s", natsStatus_GetText(stat))};
 
     // TODO: Probably sort these somehow?
     if ( expiration_time > 0.0 ) {
@@ -147,48 +142,48 @@ ErrorResult Nats::DoPut(ValPtr key, ValPtr value, bool overwrite, double expirat
                                  exp_string.c_str());
     }
 
-    return std::nullopt;
+    return {ReturnCode::SUCCESS};
 }
 
-ValResult Nats::DoGet(ValPtr key, ValResultCallback* cb) {
+OperationResult Nats::DoGet(OperationResultCallback* cb, ValPtr key) {
     kvEntry* entry = nullptr;
     auto key_string = KeyFromVal(key);
     auto stat = kvStore_Get(&entry, key_val, key_string.c_str());
     if ( stat != NATS_OK )
-        return nonstd::unexpected<std::string>(util::fmt("Get operation failed: %s", natsStatus_GetText(stat)));
+        return {ReturnCode::OPERATION_FAILED, util::fmt("Get operation failed: %s", natsStatus_GetText(stat))};
 
     // Extract the string
     auto retrieved = kvEntry_ValueString(entry);
-    ValResult res;
+    OperationResult res = {ReturnCode::OPERATION_FAILED};
     auto val = zeek::detail::ValFromJSON(retrieved, val_type, Func::nil);
 
     if ( std::holds_alternative<ValPtr>(val) ) {
         ValPtr val_v = std::get<ValPtr>(val);
-        res = val_v;
+        res = {ReturnCode::SUCCESS, "", val_v};
     }
 
-    if ( ! res )
-        res = nonstd::unexpected<std::string>(std::get<std::string>(val));
+    if ( res.code != ReturnCode::SUCCESS )
+        res.err_str = std::get<std::string>(val);
 
     kvEntry_Destroy(entry);
     return res;
 }
 
-ErrorResult Nats::DoErase(ValPtr key, ErrorResultCallback* cb) {
+OperationResult Nats::DoErase(OperationResultCallback* cb, ValPtr key) {
     auto json_key = key->ToJSON()->ToStdString();
     auto key_string = KeyFromVal(key);
 
     auto stat = kvStore_Delete(key_val, key_string.c_str());
     if ( stat != NATS_OK )
-        return util::fmt("Erase operation failed: %s", natsStatus_GetText(stat));
+        return {ReturnCode::OPERATION_FAILED, natsStatus_GetText(stat)};
 
     stat = kvStore_Delete(key_val, util::fmt("%s.%s", expiration_prefix.c_str(), key_string.c_str()));
     // Erase failure of expiration is ok maybe
 
-    return std::nullopt;
+    return {ReturnCode::SUCCESS};
 }
 
-void Nats::Expire() {
+void Nats::DoExpire(double current_network_time) {
     kvKeysList keys;
     std::string subject = util::fmt("%s.*", expiration_prefix.c_str());
     const char* subject_arr[] = {subject.c_str()};
@@ -210,7 +205,7 @@ void Nats::Expire() {
             continue;
         }
 
-        if ( run_state::network_time > expiration_time ) {
+        if ( current_network_time > expiration_time ) {
             stat = kvStore_Delete(key_val, key);
             // If we (somehow) have a key that's too short, abort here
             if ( strlen(key) <= expiration_prefix.length() + 1 )

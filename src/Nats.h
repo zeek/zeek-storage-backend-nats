@@ -7,21 +7,21 @@
 
 namespace zeek::storage::backends::nats {
 
-class Nats : public zeek::storage::Backend {
+class Nats : public Backend {
 public:
-    Nats() : Backend(false) {}
+    Nats(std::string_view tag) : Backend(SupportedModes::SYNC, tag) {}
 
-    static Backend* Instantiate() { return new Nats(); }
-    const char* Tag() override { return "NatsStorage"; }
+    static storage::BackendPtr Instantiate(std::string_view tag) { return make_intrusive<Nats>(tag); }
+    // const char* Tag() override { return tag.c_str(); }
     bool IsOpen() override { return conn != nullptr; }
-    ErrorResult DoOpen(RecordValPtr config, OpenResultCallback* cb = nullptr) override;
-    ErrorResult DoDone(ErrorResultCallback* cb = nullptr) override;
-    ErrorResult DoPut(ValPtr key, ValPtr value, bool overwrite = true, double expiration_time = 0,
-                      ErrorResultCallback* cb = nullptr) override;
-    ValResult DoGet(ValPtr key, ValResultCallback* cb = nullptr) override;
-    ErrorResult DoErase(ValPtr key, ErrorResultCallback* cb = nullptr) override;
+    OperationResult DoOpen(OpenResultCallback* cb, RecordValPtr options) override;
+    OperationResult DoClose(OperationResultCallback* cb) override;
+    OperationResult DoPut(OperationResultCallback* cb, ValPtr key, ValPtr value, bool overwrite = true,
+                          double expiration_time = 0) override;
+    OperationResult DoGet(OperationResultCallback* cb, ValPtr key) override;
+    OperationResult DoErase(OperationResultCallback* cb, ValPtr key) override;
 
-    void Expire() override;
+    void DoExpire(double current_network_time) override;
 
 private:
     std::string KeyFromVal(ValPtr key);
