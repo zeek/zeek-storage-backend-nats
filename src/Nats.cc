@@ -137,7 +137,7 @@ OperationResult Nats::DoPut(OperationResultCallback* cb, ValPtr key, ValPtr valu
 
     // TODO: Probably sort these somehow?
     if ( expiration_time > 0.0 ) {
-        std::string exp_string = util::fmt("%f", expiration_time + run_state::network_time);
+        std::string exp_string = util::fmt("%f", expiration_time);
         stat = kvStore_PutString(&rev, key_val, util::fmt("%s.%s", expiration_prefix.c_str(), key_string.c_str()),
                                  exp_string.c_str());
     }

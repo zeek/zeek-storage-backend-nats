@@ -19,6 +19,10 @@ global b: opaque of Storage::BackendHandle;
 
 event check_removed()
 	{
+	# Wait a second because expire runs in a different thread.
+	# Yes, this is flaky as can be :)
+	sleep(1sec);
+
 	local res1 = Storage::Sync::get(b, "expires");
 	# TODO: Fix expiration, this doesn't work
 	if ( res1$code != Storage::SUCCESS )
