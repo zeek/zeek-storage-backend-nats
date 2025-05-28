@@ -1,13 +1,15 @@
 #include "Nats.h"
 
 #include <nats/nats.h>
-#include <storage/Backend.h>
 #include <zeek/Func.h>
 #include <zeek/ZeekString.h>
+#include <zeek/storage/Backend.h>
 #include <zeek/storage/ReturnCode.h>
 #include <zeek/util.h>
 
 namespace zeek::storage::backends::nats {
+
+BackendPtr Nats::Instantiate() { return make_intrusive<Nats>(); }
 
 OperationResult Nats::DoOpen(OpenResultCallback* cb, RecordValPtr options) {
     RecordValPtr config = options->GetField<RecordVal>("nats");
@@ -78,7 +80,7 @@ OperationResult Nats::DoOpen(OpenResultCallback* cb, RecordValPtr options) {
     return {ReturnCode::SUCCESS};
 }
 
-OperationResult Nats::DoClose(OperationResultCallback* cb) {
+OperationResult Nats::DoClose(ResultCallback* cb) {
     kvStore_Destroy(key_val);
     jsCtx_Destroy(jetstream);
     natsConnection_Destroy(conn);
@@ -120,8 +122,7 @@ std::string Nats::KeyFromVal(ValPtr key) {
 }
 
 
-OperationResult Nats::DoPut(OperationResultCallback* cb, ValPtr key, ValPtr value, bool overwrite,
-                            double expiration_time) {
+OperationResult Nats::DoPut(ResultCallback* cb, ValPtr key, ValPtr value, bool overwrite, double expiration_time) {
     auto key_string = KeyFromVal(key);
     auto json_value = value->ToJSON()->ToStdString();
     uint64_t rev = 0;
@@ -145,7 +146,7 @@ OperationResult Nats::DoPut(OperationResultCallback* cb, ValPtr key, ValPtr valu
     return {ReturnCode::SUCCESS};
 }
 
-OperationResult Nats::DoGet(OperationResultCallback* cb, ValPtr key) {
+OperationResult Nats::DoGet(ResultCallback* cb, ValPtr key) {
     kvEntry* entry = nullptr;
     auto key_string = KeyFromVal(key);
     auto stat = kvStore_Get(&entry, key_val, key_string.c_str());
@@ -154,22 +155,19 @@ OperationResult Nats::DoGet(OperationResultCallback* cb, ValPtr key) {
 
     // Extract the string
     auto retrieved = kvEntry_ValueString(entry);
-    OperationResult res = {ReturnCode::OPERATION_FAILED};
     auto val = zeek::detail::ValFromJSON(retrieved, val_type, Func::nil);
 
-    if ( std::holds_alternative<ValPtr>(val) ) {
-        ValPtr val_v = std::get<ValPtr>(val);
-        res = {ReturnCode::SUCCESS, "", val_v};
-    }
-
-    if ( res.code != ReturnCode::SUCCESS )
-        res.err_str = std::get<std::string>(val);
+    OperationResult res;
+    if ( val )
+        res = {ReturnCode::SUCCESS, "", *val};
+    else
+        res = {ReturnCode::OPERATION_FAILED, val.error()};
 
     kvEntry_Destroy(entry);
     return res;
 }
 
-OperationResult Nats::DoErase(OperationResultCallback* cb, ValPtr key) {
+OperationResult Nats::DoErase(ResultCallback* cb, ValPtr key) {
     auto json_key = key->ToJSON()->ToStdString();
     auto key_string = KeyFromVal(key);
 

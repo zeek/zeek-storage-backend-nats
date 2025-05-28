@@ -10,7 +10,7 @@ namespace zeek::storage::backend::nats {
 Plugin plugin;
 
 zeek::plugin::Configuration Plugin::Configure() {
-    AddComponent(new storage::Component("NATS", zeek::storage::backends::nats::Nats::Instantiate));
+    AddComponent(new zeek::storage::BackendComponent("NATS", zeek::storage::backends::nats::Nats::Instantiate));
 
     zeek::plugin::Configuration config;
     config.name = "Storage::Nats";

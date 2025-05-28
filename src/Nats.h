@@ -9,17 +9,18 @@ namespace zeek::storage::backends::nats {
 
 class Nats : public Backend {
 public:
-    Nats(std::string_view tag) : Backend(SupportedModes::SYNC, tag) {}
+    Nats() : Backend(SupportedModes::SYNC, "NATS") {}
+    ~Nats() override = default;
 
-    static storage::BackendPtr Instantiate(std::string_view tag) { return make_intrusive<Nats>(tag); }
-    // const char* Tag() override { return tag.c_str(); }
+    static storage::BackendPtr Instantiate();
+
     bool IsOpen() override { return conn != nullptr; }
     OperationResult DoOpen(OpenResultCallback* cb, RecordValPtr options) override;
-    OperationResult DoClose(OperationResultCallback* cb) override;
-    OperationResult DoPut(OperationResultCallback* cb, ValPtr key, ValPtr value, bool overwrite = true,
+    OperationResult DoClose(ResultCallback* cb) override;
+    OperationResult DoPut(ResultCallback* cb, ValPtr key, ValPtr value, bool overwrite = true,
                           double expiration_time = 0) override;
-    OperationResult DoGet(OperationResultCallback* cb, ValPtr key) override;
-    OperationResult DoErase(OperationResultCallback* cb, ValPtr key) override;
+    OperationResult DoGet(ResultCallback* cb, ValPtr key) override;
+    OperationResult DoErase(ResultCallback* cb, ValPtr key) override;
 
     void DoExpire(double current_network_time) override;
 
